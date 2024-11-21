@@ -1,0 +1,47 @@
+# Step 1: Build the app in image 'builder'
+FROM node:18-alpine AS builder
+
+
+# Set environment variable to allow legacy OpenSSL algorithms
+ENV NODE_OPTIONS=--openssl-legacy-provider
+
+# Install necessary packages and update npm
+RUN apk update && apk upgrade && apk add --no-cache bash wget && \
+    npm install -g npm@latest && \
+    npm install -g @angular/cli@latest --unsafe-perm=true && \
+    rm -rf /var/cache/apk/*
+
+WORKDIR /usr/src/app
+
+# Copy dependency definitions first for better caching
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy the rest of the application code
+COPY . .
+
+# Set environment variable to allow legacy OpenSSL algorithms (temporary workaround)
+ENV NODE_OPTIONS=--openssl-legacy-provider
+
+# Build the Angular application
+RUN npm run build
+
+# Step 2: Use build output from 'builder'
+FROM nginx:stable-alpine
+LABEL version="1.0"
+
+# Remove default Nginx website
+RUN rm -rf /usr/share/nginx/html/*
+
+# Copy custom nginx configuration
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# Copy the Angular build output
+COPY --from=builder /usr/src/app/dist/tower-web/ /usr/share/nginx/html/
+
+# Optional: Add health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost/ || exit 1
+

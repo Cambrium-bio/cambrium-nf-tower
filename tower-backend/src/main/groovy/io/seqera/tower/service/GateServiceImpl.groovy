@@ -111,7 +111,12 @@ class GateServiceImpl implements GateService {
      * @return Resolved text template string
      */
     protected String getTextTemplate(Map binding) {
-        getTemplateFile('/io/seqera/tower/service/auth-mail.txt', binding)
+        def resource = getTemplateFile('io/seqera/tower/service/auth-mail.txt', binding)
+        if (resource) {
+            println("Resource content processed successfully:")
+        } else {
+            println("Resource not found: io/seqera/tower/service/auth-mail.txt")
+        }
     }
 
     /**
@@ -120,7 +125,7 @@ class GateServiceImpl implements GateService {
      * @return Resolved HTML template string
      */
     protected String getHtmlTemplate(Map binding) {
-        getTemplateFile('/io/seqera/tower/service/auth-mail.html', binding)
+        getTemplateFile('io/seqera/tower/service/auth-mail.html', binding)
     }
 
     /**
@@ -128,11 +133,12 @@ class GateServiceImpl implements GateService {
      * @return A {@link MailAttachment} object representing the image logo to be included in the HTML email
      */
     protected MailAttachment getLogoAttachment() {
-        MailAttachment.resource('/io/seqera/tower/service/tower-logo.png', contentId: '<tower-logo>', disposition: 'inline')
+        MailAttachment.resource('io/seqera/tower/service/tower-logo.png', contentId: '<tower-logo>', disposition: 'inline')
     }
 
     protected String buildAccessUrl(User user) {
         String accessUrl = "${serverUrl}/auth?uid=${user.getUid()}&token=${user.authToken}"
+        println(accessUrl)
         return new URI(accessUrl).toString()
     }
 
@@ -173,7 +179,7 @@ class GateServiceImpl implements GateService {
         Mail mail = new Mail()
         mail.to(contactEmail)
         mail.subject("New user registration")
-        mail.body(getTemplateFile('/io/seqera/tower/service/new-user-mail.html', binding))
+        mail.body(getTemplateFile('io/seqera/tower/service/new-user-mail.html', binding))
         return mail
     }
 

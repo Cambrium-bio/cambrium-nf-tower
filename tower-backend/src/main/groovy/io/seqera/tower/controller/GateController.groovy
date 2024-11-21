@@ -84,11 +84,18 @@ class GateController extends BaseController {
             log.error(msg, e)
             return HttpResponse.badRequest(new AccessGateResponse(message: msg))
         }
-
-        catch (Exception e) {
-            final msg = "Oops.. Something went wrong during the registration procedure"
+        catch (IllegalArgumentException e) {
+            final msg = "Invalid registration input: ${e.message}"
             log.error(msg, e)
             return HttpResponse.badRequest(new AccessGateResponse(message: msg))
+        } catch (IOException e) {
+            final msg = "Template or file resource is missing: ${e.message}"
+            log.error(msg, e)
+            return HttpResponse.serverError(new AccessGateResponse(message: msg))
+        } catch (Exception e) {
+            final msg = "An unexpected error occurred during registration"
+            log.error(msg, e)
+            return HttpResponse.serverError(new AccessGateResponse(message: msg))
         }
     }
 }

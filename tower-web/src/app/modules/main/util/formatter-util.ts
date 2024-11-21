@@ -8,7 +8,7 @@
  * This Source Code Form is "Incompatible With Secondary Licenses", as
  * defined by the Mozilla Public License, v. 2.0.
  */
-import {HumanizeDuration, HumanizeDurationLanguage, ILanguage} from "humanize-duration-ts";
+import {HumanizeDuration, HumanizeDurationLanguage, Language} from "humanize-duration-ts";
 import * as dateFormat from "date-fns/format";
 import * as filesize from "file-size";
 
@@ -19,7 +19,7 @@ export abstract class FormatterUtil {
 
   static initialize() {
     const language: HumanizeDurationLanguage  = new HumanizeDurationLanguage();
-    language.addLanguage('short', {y: () => 'y', mo: () => 'mo', w: () => 'w', d: () => 'd', h: () => 'h', m: () => 'm', s: () => 's'} as ILanguage);
+    language.addLanguage('short', {y: () => 'y', mo: () => 'mo', w: () => 'w', d: () => 'd', h: () => 'h', m: () => 'm', s: () => 's', ms: () => 'ms', decimal: 'decimal'} as Language);
     this.durationHumanizer = new HumanizeDuration(language);
   }
 
