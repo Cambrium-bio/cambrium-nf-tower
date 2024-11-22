@@ -339,4 +339,5 @@ class WorkflowServiceImpl implements WorkflowService {
         List<WorkflowProcess> all = WorkflowProcess.executeQuery("from WorkflowProcess p where workflow=:workflow order by p.position", [workflow: workflow])
         all.collect { WorkflowProcess it -> it.name }
     }
+
 }

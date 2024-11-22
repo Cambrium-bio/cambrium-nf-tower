@@ -17,6 +17,8 @@ import javax.mail.Message
 import javax.mail.MessagingException
 import javax.mail.Session
 import javax.mail.Transport
+import javax.mail.Authenticator
+import javax.mail.PasswordAuthentication
 import javax.mail.internet.HeaderTokenizer
 import javax.mail.internet.InternetAddress
 import javax.mail.internet.MimeBodyPart
@@ -111,7 +113,12 @@ class Mailer {
      */
     protected Session getSession() {
         if( !session ) {
-            session = Session.getInstance(createProps())
+            session = Session.getInstance(createProps(), new Authenticator() {
+                @Override
+                protected PasswordAuthentication getPasswordAuthentication() {
+                    return new PasswordAuthentication(user, password);
+                }
+            })
             if( config.debug != true )
                 return session
 
@@ -168,17 +175,41 @@ class Mailer {
      * @param message A {@link MimeMessage} object representing the email to send
      */
     protected void sendViaJavaMail(MimeMessage message) {
-        if( !message.getAllRecipients() )
-            throw new IllegalArgumentException("Missing mail message recipient")
-        
-        final transport = getSession().getTransport()
-        log.debug("Connecting to host=$host port=$port user=$user")
-        transport.connect(host, port as int, user, password)
-        try {
-            transport.sendMessage(message, message.getAllRecipients())
+        if (!message.getAllRecipients()) {
+            throw new IllegalArgumentException("Missing mail message recipient");
         }
-        finally {
-            transport.close()
+
+        Properties props = new Properties();
+        props.put("mail.smtp.auth", "true");
+        props.put("mail.smtp.starttls.enable", "true"); // Enable STARTTLS
+        props.put("mail.smtp.ssl.enable", "true");      // Enable SSL if required
+        props.put("mail.smtp.ssl.trust", host);         // Trust the SMTP host
+        props.put("mail.smtp.host", host);
+        props.put("mail.smtp.port", String.valueOf(port));
+
+        Session session = Session.getInstance(props, new Authenticator() {
+            @Override
+            protected PasswordAuthentication getPasswordAuthentication() {
+                return new PasswordAuthentication(user, password);
+            }
+        });
+
+        println("Trying to connect: ....")
+
+        try {
+            println("try")
+            println("Connecting to host=" + host + " port=" + port + " user=" + user + "pwd=" + password);
+            Transport transport = session.getTransport();
+            transport.connect(host, port, user, password);
+            println("Connected");
+            try {
+                transport.sendMessage(message, message.getAllRecipients());
+                System.out.println("Email sent successfully");
+            } finally {
+                transport.close();
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to send email", e);
         }
     }
 
@@ -355,7 +386,7 @@ class Mailer {
         }
 
         final transport = getTransport0()
-        log.debug("Connecting to host=$host port=$port user=${hide(user,true)} password=${hide(password,false)}")
+        log.debug("SendAll - Connecting to host=$host port=$port user=${hide(user,true)} password=${hide(password,false)}")
         transport.connect(host, port as int, user, password)
         try {
             for( Mail m : mails ) {

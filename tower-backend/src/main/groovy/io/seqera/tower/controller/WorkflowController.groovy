@@ -54,6 +54,8 @@ import io.seqera.tower.service.audit.AuditEventPublisher
 import io.seqera.tower.service.progress.ProgressService
 import io.seqera.tower.validation.ValidationHelper
 import org.grails.datastore.mapping.validation.ValidationException
+import io.seqera.tower.exchange.trace.TraceBeginRequest
+
 /**
  * Implements the `workflow` API
  */
@@ -360,4 +362,5 @@ class WorkflowController extends BaseController {
             return HttpResponse.badRequest(resp)
         }
     }
+
 }
