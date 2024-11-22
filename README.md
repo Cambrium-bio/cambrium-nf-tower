@@ -22,6 +22,17 @@ visit [Seqera Labs](https://seqera.io).
 * Java 8
 * Docker engine
 
+## Create .env file
+
+Create a `.env` file in the root directory with the following content:
+
+```
+TOWER_SMTP_HOST=smtp.gmail.com
+TOWER_SMTP_PORT=465
+TOWER_SMTP_USER=ops@cambrium.bio
+TOWER_SMTP_PASSWORD=your_password
+```
+
 ## Build the environment
 
 ```bash
