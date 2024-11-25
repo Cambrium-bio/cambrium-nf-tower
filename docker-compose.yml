@@ -5,7 +5,9 @@ services:
     image: tower-backend
     environment: 
       - TOWER_SMTP_PASSWORD
-      - TOWER_SERVER_URL 
+      - TOWER_SMTP_HOST
+      - TOWER_SMTP_PORT
+      - TOWER_SMTP_USER
     networks:
       - frontend
       - backend
