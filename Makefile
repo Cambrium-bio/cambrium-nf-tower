@@ -19,10 +19,10 @@ build:
 
 # Start nginx and FastAPI in addition to your normal services
 run:
-	#gunicorn -w 1 -b 0.0.0.0:8002 tower-submit.tower-submit:app
-	docker-compose up
+	docker-compose up -d
 	# Example: Run FastAPI app if it's part of your stack
 	# Uncomment if you need to start FastAPI (for example, if it's not part of Docker Compose)
+	gunicorn -w 1 -b 0.0.0.0:8002 tower-submit.tower-submit:app
 
 #run:
 #	docker-compose up

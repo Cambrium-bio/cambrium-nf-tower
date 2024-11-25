@@ -1,90 +1,176 @@
+import json
 import os
 import subprocess
 from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
-import json
-
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import logging
+import traceback
+import time
+from datetime import datetime
+import requests
 
 app = Flask(__name__)
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
-def send_email(subject, body, to_email, from_email, password):
-    password = os.getenv("GMAIL_PASSWORD")
-    try:
-        # Set up the SMTP server and port for SSL
-        smtp_server = "smtp.gmail.com"
-        smtp_port = 465  # SSL port
+class TowerAuth:
+    def __init__(self, token, email):
+        self.base_url = "http://localhost:8080"
+        self.access_token = token
+        self.email = email
+        self.session = requests.Session()
 
-        # Create the email components
-        msg = MIMEMultipart()
-        msg["From"] = from_email
-        msg["To"] = to_email
-        msg["Subject"] = subject
+    def verify_credentials(self):
+        """Verify Tower credentials by attempting to login"""
+        try:
+            # Attempt login
+            login_response = self.session.post(
+                f"{self.base_url}/login",
+                json={
+                    'username': '@token',
+                    'password': self.access_token
+                },
+                headers={
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                allow_redirects=False
+            )
 
-        # Add the email body
-        msg.attach(MIMEText(body, "plain"))
+            # Check for successful login (303 redirect to /auth?success=true)
+            if login_response.status_code == 303 and 'success=true' in login_response.headers.get('Location', ''):
+                # Follow redirect to get user info
+                auth_response = self.session.get(
+                    f"{self.base_url}/user",
+                    headers={'Accept': 'application/json'},
+                    allow_redirects=False
+                )
+                
+                if auth_response.status_code == 200:
+                    user_data = json.loads(auth_response.text)
+                    if user_data['user']['email'] == self.email:
+                        return True, "Credentials verified"
+                    else:
+                        return False, "Email address does not match token"
+                
+            return False, "Invalid credentials"
+            
+        except Exception as e:
+            logger.error(f"Tower authentication error: {str(e)}")
+            return False, f"Authentication error: {str(e)}"
 
-        # Connect to the SMTP server using SSL
-        with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
-            server.login(from_email, password)  # Log in to the Gmail account
-            server.sendmail(from_email, to_email, msg.as_string())  # Send the email
-        
-        print("Email sent successfully!")
-    except Exception as e:
-        print(f"Failed to send email: {e}")
-
-subject = "Test Email"
-body = "This is a test email sent from Python!"
-to_email = "sebastian.raemisch@cambrium.bio"
-from_email = "ops@cambrium.bio"
-
-
-# Endpoint to handle POST requests with form data and files
 @app.route("/api/workflow/run", methods=["POST"])
 def submit_workflow():
     try:
+        # Get Tower credentials from request
+        tower_token = request.headers.get('Tower-Token')
+        tower_email = request.headers.get('Tower-Email')
+        
+        if not tower_token or not tower_email:
+            return jsonify({
+                "message": "Both Tower-Token and Tower-Email headers are required"
+            }), 401
+
+        # Verify Tower credentials
+        tower_auth = TowerAuth(tower_token, tower_email)
+        is_valid, auth_message = tower_auth.verify_credentials()
+        
+        if not is_valid:
+            return jsonify({
+                "message": f"Tower authentication failed: {auth_message}"
+            }), 401
+
         # Parse arguments (form data)
         arguments = request.form.to_dict()
-        # Print received arguments
-        print(f"Arguments received: {arguments}")
+        logger.info(f"Arguments received: {arguments}")
         
+        # Validate required arguments
+        if '-bucket-dir' not in arguments:
+            return jsonify({"message": "bucket-dir is required"}), 400
+        if '--mode' not in arguments:
+            return jsonify({"message": "mode is required"}), 400
+
         # Handle file uploads
-        files = request.files.getlist('files')  # Get all uploaded files
+        files = request.files
         file_paths = []
+
+        # Create unique job directory
+        now = datetime.now()
+        time_str = now.strftime("%Y%m%d_%H%M%S")
+        millis = now.microsecond // 1000
+        uid = f"{time_str}_{millis}"
+        workdir = f"/home/ec2-user/jobs/job_{uid}"
+        current_dir = os.getcwd()
+        
+        try:
+            os.makedirs(workdir, exist_ok=True)
+            logger.info(f"Created workdir: {workdir}")
+            os.chdir(workdir)
+            logger.info(f"chdir {os.getcwd()}")
+        except Exception as e:
+            logger.error(f"Directory error: {str(e)}")
+            return jsonify({"message": f"Failed to create working directory: {str(e)}"}), 500
+
+        # Process uploaded files
         if files:
-            upload_dir = "uploads"
-            os.makedirs(upload_dir, exist_ok=True)
-
-            for file in files:
-                filename = secure_filename(file.filename)
-                file_location = os.path.join(upload_dir, filename)
-                file.save(file_location)  # Save file to the server
+            logger.info(f"Received {len(files)} files")
+            for filename, file in files.items():
+                sec_filename = secure_filename(filename)
+                file_location = os.path.join(workdir, sec_filename)
+                file.save(file_location)
                 file_paths.append(file_location)
+            logger.info(f"Saved files: {file_paths}")
+        else:
+            logger.info("No files received")
 
-        # Run Nextflow pipeline in the background irrespective of files uploaded
-        nextflow_command = ["nextflow", "run", "/Users/raemisch/projects/Cambrium-NextFlow-Design/main.nf", "-with-tower" , "-bucket-dir", arguments['bucket-dir'], "--use-gpu", arguments['use_gpu'], "-profile", arguments['profile'], "--mode", arguments['mode']]
-        nextflow_command = arguments['cmd']
-        process = subprocess.Popen(nextflow_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        # Construct and run Nextflow command
+        nextflow_command = "nextflow run /home/ec2-user/Cambrium-NextFlow-Design/main.nf -with-tower"
+        for key, value in arguments.items():
+            nextflow_command += f" {key} {value}"
 
-        # Optionally, capture the output of the command (you could also log it if needed)
-        stdout, stderr = process.communicate()
-        print(f"Nextflow STDOUT: {stdout.decode()}")
-        print(f"Nextflow STDERR: {stderr.decode()}")
+        logger.info(f"Running Nextflow command:\n {nextflow_command}")
+        process = subprocess.Popen(
+            nextflow_command, 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.PIPE, 
+            shell=True,
+            env={**os.environ, 'TOWER_ACCESS_TOKEN': tower_token}  # Pass token to Nextflow
+        )
+
+        # Wait briefly and check process status
+        time.sleep(12)
+        return_code = process.poll()
+        os.chdir(current_dir)
+
+        if return_code is not None:
+            stdout, stderr = process.communicate()
+            if return_code == 0:
+                return jsonify({
+                    "message": "Workflow started successfully (and finished quickly)",
+                    "arguments": arguments,
+                    "files": file_paths,
+                    "nextflow_output": stdout.decode()
+                }), 200
+            else:
+                return jsonify({
+                    "message": "Workflow failed to start",
+                    "arguments": arguments,
+                    "files": file_paths,
+                    "nextflow_error": f"{stdout.decode()}\n{stderr.decode()}"
+                }), 500
 
         return jsonify({
-            "message": "Workflow submitted successfully",
+            "message": f"Workflow started successfully in {workdir}",
             "arguments": arguments,
             "files": file_paths,
-            "nextflow_output": stdout.decode()
-        })
+            "process_id": process.pid
+        }), 202
 
     except Exception as e:
+        logger.error(traceback.format_exc())
         return jsonify({
-            "message": f"An error occurred: {str(e)}"
-        }), 400
-
+            "message": f"An error occurred: {str(e)}\n{traceback.format_exc()}"
+        }), 500
 
 if __name__ == "__main__":
     app.run(debug=True)
